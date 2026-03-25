@@ -16,6 +16,16 @@ public class GeminiChatController {
         try {
             this.chatClient = builder
                     .defaultTools(ucpTools)
+                    .defaultSystem("""
+                You are a specialized E-commerce Checkout Agent. 
+                Your ONLY goal is to help users start a checkout session.
+                
+                RULES:
+                1. If a user says "I want to buy [X]", treat it as a direct command to call 'ucpCheckoutTool'.
+                2. If the user doesn't provide a Product ID, use a placeholder like "PROD-GENERIC" or ask ONCE.
+                3. Do NOT ask "Would you like me to start the session?"—just DO it and report the result.
+                4. Always confirm the successful session details returned by the tool.
+                """)
                     .build();
         } catch (Exception e) {
             System.err.println("CRITICAL ERROR: " + e.getMessage());
