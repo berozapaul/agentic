@@ -28,7 +28,7 @@ public class AgenticCheckoutController {
         // 2. 'requires_escalation' = Human must click a link (e.g. terms & conditions)
         // 3. 'ready_for_complete' = Agent can finish the buy right now
 
-        response.put("status", "ready_for_complete");
+        response.put("status", "requires_escalation");
         response.put("total_amount", 15000); // UCP uses integers for currency (150.00)
         response.put("currency", "USD");
 

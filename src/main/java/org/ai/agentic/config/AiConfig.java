@@ -22,32 +22,43 @@ public class AiConfig {
             this.restClient = restClient;
         }
 
-        @Tool(description = "Creates a real UCP checkout session. Use this when the user wants to buy something.")
+        @Tool(description = "Creates and completes a UCP checkout. If escalation is required, it returns a link.")
         public String ucpCheckoutTool(String productId, int quantity) {
-            System.out.println("LOG: Agent calling UCP API for " + productId);
-
-            // 1. Call your actual AgenticCheckoutController
-            Map<String, Object> requestBody = Map.of(
-                    "productId", productId,
-                    "quantity", quantity
-            );
+            System.out.println("LOG: Agent initiating Auto-Checkout for " + productId);
 
             try {
-                Map response = restClient.post()
+                // STEP 1: Create the Session
+                Map<String, Object> requestBody = Map.of("productId", productId, "quantity", quantity);
+                Map<String, Object> sessionResponse = restClient.post()
                         .uri("/api/v1/ucp/checkout-sessions")
                         .body(requestBody)
                         .retrieve()
                         .body(Map.class);
 
-                // 2. Return the structured data back to Gemini
-                return String.format(
-                        "Session Created! ID: %s, Status: %s, URL: %s",
-                        response.get("id"),
-                        response.get("status"),
-                        response.get("continue_url")
-                );
+                String sessionId = (String) sessionResponse.get("id");
+                String status = (String) sessionResponse.get("status");
+
+                // STEP 2: Logical Branching
+                if ("ready_for_complete".equals(status)) {
+                    System.out.println("LOG: Status is READY. Agent is completing order " + sessionId);
+
+                    // Call the /complete endpoint automatically
+                    Map<String, Object> completionResponse = restClient.post()
+                            .uri("/api/v1/ucp/checkout-sessions/{id}/complete", sessionId)
+                            .retrieve()
+                            .body(Map.class);
+
+                    return String.format(
+                            "Order Automatically Completed! ID: %s. Message: %s",
+                            completionResponse.get("order_id"),
+                            completionResponse.get("message")
+                    );
+                } else {
+                    // Fallback: If status was 'incomplete' or 'requires_escalation'
+                    return "Escalation Required. Please complete here: " + sessionResponse.get("continue_url");
+                }
             } catch (Exception e) {
-                return "Error connecting to UCP Service: " + e.getMessage();
+                return "Error in Agentic Flow: " + e.getMessage();
             }
         }
     }
