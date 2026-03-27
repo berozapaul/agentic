@@ -9,24 +9,33 @@ import java.util.Map;
 @RestController
 public class UcpDiscoveryController {
 
-    @GetMapping(value = "/.well-known/ucp", produces = "application/json")
+    @GetMapping("/.well-known/ucp")
     public Map<String, Object> getUcpManifest() {
         return Map.of(
-                "ucp", Map.of(
-                        "version", "2026-01-11",
-                        "services", Map.of(
-                                "dev.ucp.shopping", Map.of(
-                                        "version", "2026-01-11",
-                                        "rest", Map.of(
-                                                "endpoint", "http://localhost:8080/api/v1/ucp"
+                "ucp_version", "2026.1",
+                "capabilities", List.of(
+                        Map.of(
+                                "name", "shopping.checkout",
+                                "type", "agentic-commerce",
+                                "version", "1.0",
+                                "endpoints", Map.of(
+                                        "create_session", Map.of(
+                                                "path", "/api/v1/ucp/checkout-sessions",
+                                                "method", "POST"
+                                        ),
+                                        "complete_session", Map.of(
+                                                "path", "/api/v1/ucp/checkout-sessions/{id}/complete",
+                                                "method", "POST"
                                         )
-                                )
-                        ),
-                        "capabilities", List.of(
-                                Map.of(
-                                        "name", "dev.ucp.shopping.checkout",
-                                        "version", "2026-01-11",
-                                        "spec", "https://ucp.dev/specification/checkout"
+                                ),
+                                "state_machine", Map.of(
+                                        "states", List.of("incomplete", "ready_for_complete", "requires_escalation", "completed"),
+                                        "final_state", "completed"
+                                ),
+                                "auth", Map.of(
+                                        "type", "oauth2",
+                                        "mode", "delegation",
+                                        "scopes", List.of("purchase.on_behalf")
                                 )
                         )
                 )

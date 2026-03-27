@@ -5,6 +5,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.client.RestClient;
 
+import java.util.List;
 import java.util.Map;
 
 @Configuration
@@ -17,49 +18,61 @@ public class AiConfig {
 
     public static class UcpTools {
         private final RestClient restClient;
+        private Map<String, Object> cachedManifest;
 
         public UcpTools(RestClient restClient) {
             this.restClient = restClient;
         }
 
-        @Tool(description = "Creates and completes a UCP checkout. If escalation is required, it returns a link.")
-        public String ucpCheckoutTool(String productId, int quantity) {
-            System.out.println("LOG: Agent initiating Auto-Checkout for " + productId);
-
-            try {
-                // STEP 1: Create the Session
-                Map<String, Object> requestBody = Map.of("productId", productId, "quantity", quantity);
-                Map<String, Object> sessionResponse = restClient.post()
-                        .uri("/api/v1/ucp/checkout-sessions")
-                        .body(requestBody)
+        private String resolveEndpoint(String intent) {
+            if (cachedManifest == null) {
+                System.out.println("LOG: Initializing UCP Discovery via /.well-known/ucp...");
+                this.cachedManifest = restClient.get()
+                        .uri("/.well-known/ucp")
                         .retrieve()
                         .body(Map.class);
-
-                String sessionId = (String) sessionResponse.get("id");
-                String status = (String) sessionResponse.get("status");
-
-                // STEP 2: Logical Branching
-                if ("ready_for_complete".equals(status)) {
-                    System.out.println("LOG: Status is READY. Agent is completing order " + sessionId);
-
-                    // Call the /complete endpoint automatically
-                    Map<String, Object> completionResponse = restClient.post()
-                            .uri("/api/v1/ucp/checkout-sessions/{id}/complete", sessionId)
-                            .retrieve()
-                            .body(Map.class);
-
-                    return String.format(
-                            "Order Automatically Completed! ID: %s. Message: %s",
-                            completionResponse.get("order_id"),
-                            completionResponse.get("message")
-                    );
-                } else {
-                    // Fallback: If status was 'incomplete' or 'requires_escalation'
-                    return "Escalation Required. Please complete here: " + sessionResponse.get("continue_url");
-                }
-            } catch (Exception e) {
-                return "Error in Agentic Flow: " + e.getMessage();
             }
+
+            try {
+                List<Map<String, Object>> capabilities = (List<Map<String, Object>>) cachedManifest.get("capabilities");
+                Map<String, Object> checkout = capabilities.stream()
+                        .filter(c -> "shopping.checkout".equals(c.get("name")))
+                        .findFirst()
+                        .orElseThrow(() -> new RuntimeException("Required UCP capability not found"));
+
+                Map<String, Object> endpoints = (Map<String, Object>) checkout.get("endpoints");
+                Map<String, Object> target = (Map<String, Object>) endpoints.get(intent);
+
+                return (String) target.get("path");
+            } catch (Exception e) {
+                System.err.println("CRITICAL: UCP Manifest parsing failed for intent: " + intent);
+                throw new RuntimeException("Protocol Mismatch: Unable to resolve UCP endpoint.");
+            }
+        }
+
+        @Tool(description = "Step 1: Perform UCP Discovery and Create a checkout session based on merchant manifest.")
+        public Map<String, Object> createUcpSession(String productId, int quantity) {
+            String path = resolveEndpoint("create_session");
+
+            System.out.println("LOG: UCP Discovery Successful. Resolved Path: " + path);
+
+            return restClient.post()
+                    .uri(path)
+                    .body(Map.of("productId", productId, "quantity", quantity))
+                    .retrieve()
+                    .body(Map.class);
+        }
+
+        @Tool(description = "Step 2: Finalize a UCP session using the discovered 'complete_session' endpoint.")
+        public Map<String, Object> completeUcpSession(String sessionId) {
+            String pathTemplate = resolveEndpoint("complete_session");
+
+            System.out.println("LOG: Executing UCP 'Complete' via discovered path: " + pathTemplate);
+
+            return restClient.post()
+                    .uri(pathTemplate, sessionId)
+                    .retrieve()
+                    .body(Map.class);
         }
     }
 }
